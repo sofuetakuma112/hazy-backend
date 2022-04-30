@@ -1,0 +1,65 @@
+version: "3.7"
+
+services:
+  # PostgreSQLの実行環境
+  postgresql:
+    container_name: devenv_postgresql
+    build:
+      context: ./docker/postgresql # ビルドするDockerFileのPath?
+      dockerfile: Dockerfile
+    image: devenv/postgresql
+    env_file: # インクルードされる環境変数を含むファイル
+      - docker/postgresql/.env
+    ports:
+      - 5433:5432
+    volumes:
+      - postgresql_data:/var/lib/postgresql/data:rw # :rwで読み書き(rw)が出来るようにオプション設定している
+    environment:
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=C"
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "1"
+
+  # pgAdmin4の実行環境
+  pgadmin4:
+    container_name: devenv_pgadmin4
+    image: dpage/pgadmin4
+    env_file:
+      - docker/pgadmin4/.env
+    depends_on:
+      - postgresql
+    ports:
+      - 5434:80
+    volumes:
+      - pgadmin4_data:/var/lib/pgadmin:rw
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "1"
+
+  # Golangの実行環境
+  app:
+    container_name: devenv_app
+    build:
+      context: ./docker/app
+      dockerfile: Dockerfile
+    image: devenv/golang
+    depends_on:
+      - postgresql
+    volumes:
+      - ./app:/go/src/app:rw
+    tty: true # コンテナの永続化が必要な場合にtrueを渡す
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "1"
+
+volumes:
+  postgresql_data:
+    driver: local
+  pgadmin4_data:
+    driver: local
