@@ -54,7 +54,7 @@ go run main.go
 コンテナ、ネットワーク、ボリューム、イメージを削除する。
 
 ```bash
-docker-compose down --volumes --rmi all
+docker compose down --volumes --rmi all
 ```
 
 📖 公式ドキュメント https://docs.docker.com/compose/reference/down/
