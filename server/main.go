@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -47,7 +47,10 @@ func handleGetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var user User
-	db.First(&user, claims["user_id"])
+	if err = db.First(&user, claims["user_id"]).Error; err != nil {
+		http.Error(w, fmt.Sprintf("%v", err), 400)
+		return
+	}
 	w.Header().Set("Content-type", "application/json")
 	json_bytes, _ := json.MarshalIndent(&user, "", "\t\t")
 	w.Write(json_bytes)
@@ -59,17 +62,22 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		body := make([]byte, len)
 		r.Body.Read(body)
 		// TODO: JSONデータのキーが正しいかチェックする必要がある
-		m := make(map[string]interface{})
+		m := make(map[string]string)
 		err := json.Unmarshal(body, &m)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("%v", err), 400)
 			return
 		}
-		fmt.Println(m)
-
+		
 		var user User
-		if err := db.Where("email = ? AND password = ?", m["email"], m["password"]).First(&user).Error; err != nil {
+		if err := db.Where("email = ?", m["email"]).First(&user).Error; err != nil {
 			http.Error(w, fmt.Sprintf("%v", err), 400)
+			return
+		}
+		err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(m["password"]))
+		if err != nil {
+			// パスワードが違う
+			http.Error(w, fmt.Sprintf("%v", "Email or password is wrong"), 400)
 			return
 		}
 		// user.IDを元にJWTを生成する
@@ -85,19 +93,43 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func handleLogout(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("jwt")
+	if err == http.ErrNoCookie {
+		http.Error(w, fmt.Sprintf("%v", err), 400)
+	}
+	cookie.MaxAge = -1
+	http.SetCookie(w, cookie)
+	fmt.Fprint(w, "success!")
+}
+
 func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		len := r.ContentLength
 		body := make([]byte, len)
 		r.Body.Read(body)
-		var user User
-		json.Unmarshal(body, &user)
-		result := db.Create(&user) // DBに保存する
-		if result.Error != nil {
-			// emailの重複エラーはここで検知できる
-			http.Error(w, fmt.Sprintf("%v", result.Error), 400)
+
+		// TODO: 文字列型以外のデータが送られてきたときにエラーになるかも？
+		m := make(map[string]string)
+		json.Unmarshal(body, &m)
+
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(m["password"]), 10)
+		if err != nil {
+			fmt.Println(err)
 			return
 		}
+
+		user := User{
+			Name: m["name"],
+			Email: m["email"],
+			Password: string(hashedPassword),
+		}
+		if err := db.Create(&user).Error; err != nil {
+			// emailの重複エラーはここで検知できる
+			http.Error(w, fmt.Sprintf("%v", err), 400)
+			return
+		}
+
 		// user.IDを元にJWTを生成する
 		jwt := generateJWT(int(user.ID))
 		cookie := &http.Cookie{
@@ -148,7 +180,7 @@ func init() {
 }
 
 func main() {
-	db.Exec("DELETE FROM users")
+	db.Exec("DROP TABLE IF EXISTS users")
 	db.AutoMigrate(&User{}) // Migrate the schema
 
 	server := http.Server{
@@ -158,5 +190,6 @@ func main() {
 	http.HandleFunc("/getCurrentUser", handleGetCurrentUser)
 	http.HandleFunc("/createUser", handleCreateUser)
 	http.HandleFunc("/login", handleLogin)
+	http.HandleFunc("/logout", handleLogout)
 	server.ListenAndServe()
 }
