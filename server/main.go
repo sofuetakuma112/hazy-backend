@@ -12,8 +12,9 @@ import (
 type User struct {
 	gorm.Model
 	Name     string
-	Email    string `gorm:"unique"`
-	Password string
+	Email    string `gorm:"unique;not null"`
+	UserId   string `gorm:"unique;not null"`
+	Password string `gorm:"not null"`
 	Friends  []*User `gorm:"many2many:user_friends"` // many2manyで指定した名前の中間テーブルが作成される
 }
 
@@ -105,7 +106,7 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		// TODO: 文字列型以外のデータが送られてきたときにエラーになるかも？
 		m := make(map[string]string)
 		json.Unmarshal(body, &m)
-
+		
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(m["password"]), 10)
 		if err != nil {
 			fmt.Println(err)
@@ -113,7 +114,7 @@ func handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		}
 
 		user := User{
-			Name:     m["name"],
+			UserId:     m["userId"],
 			Email:    m["email"],
 			Password: string(hashedPassword),
 		}
@@ -185,8 +186,8 @@ func handleGetFriends(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		friendsWithRelationStatus = append(friendsWithRelationStatus, map[string]interface{}{
-			"userId":         friend.ID,
-			"name":           friend.Name,
+			"userId":   friend.UserId,
+			"name":     friend.Name,
 			"isFriend": isFriend,
 		})
 	}
@@ -286,13 +287,14 @@ func main() {
 	for _, value := range []int{1, 2, 3, 4, 5} {
 		name := fmt.Sprintf("sofue%d", value)
 		email := fmt.Sprintf("kawahagi0620+%d@gmail.com", value)
-		password_plain := fmt.Sprintf("test%d", value)
+		userId := fmt.Sprintf("test%v_id", value)
+		password_plain := fmt.Sprintf("test%d_pw", value)
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password_plain), 10)
 		if err != nil {
 			panic(err)
 		}
 
-		var user = User{Name: name, Email: email, Password: string(hashedPassword)}
+		var user = User{Name: name, Email: email, UserId: userId, Password: string(hashedPassword)}
 		db.Create(&user)
 	}
 	var userFriend = UserFriend{UserID: 1, FriendID: 2}
